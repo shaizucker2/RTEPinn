@@ -1,6 +1,7 @@
 from ImportFile import *
 import time
 from scipy.special import legendre
+import pickle
 
 pi = math.pi
 
@@ -50,6 +51,23 @@ def kernel(mu, mu_prime):
 
     return k.to(dev)
 
+def kernel_inverse(mu, mu_prime, model, x):
+
+    d = model.forward_coef(x)
+    d_temp = [1.0, 1.98398, 1.50823, 0.70075, 0.23489, 0.05133, 0.00760, 0.00048]
+    k = torch.tensor(()).new_full(size=(mu.shape[0], mu_prime.shape[0]), fill_value=0.0).to(dev)
+    for p in range(model.n_coef):
+        pn_mu = torch.from_numpy(legendre(p)(mu.detach().cpu().numpy()).reshape(-1, 1)).type(torch.FloatTensor)
+        # plt.scatter(mu.detach().numpy(), pn_mu.detach().numpy())
+        pn_mu_prime = torch.from_numpy(legendre(p)(mu_prime.detach().cpu().numpy()).reshape(-1, 1).T).type(torch.FloatTensor)
+        kn = torch.matmul(pn_mu, pn_mu_prime).to(dev)
+        if p == 1:
+            k = k + torch.transpose(d[:, p].repeat(kn.shape[1], 1), 0, 1) * kn
+        else:
+            k = k + d_temp[p] * kn
+
+    return k.to(dev)
+
 
 def compute_scattering(x, mu, model):
     mu_prime, w = np.polynomial.legendre.leggauss(n_quad)
@@ -64,7 +82,7 @@ def compute_scattering(x, mu, model):
     u = model(inputs)
     u = u.reshape(x.shape[0], mu_prime.shape[0])
 
-    kern = kernel(mu, mu_prime)
+    kern = kernel_inverse(mu, mu_prime, model, x)
 
     scatter_values = torch.zeros_like(x)
 
@@ -135,12 +153,43 @@ def compute_res(network, x_f_train, space_dimensions, solid_object, computing_er
 
     return res
 
+# def compute_measurement_error(network,x_measure,mu_mesure,u_measure):
+#
+#     network()
+
+# def add_internal_points(n_internal):
+#     n_int = int(n_internal * 3 / 4)
+#     print("Adding Internal Points")
+#     points = get_points(n_internal, 5, "uniform", 16)
+#     dom_int = points[:n_int, :3]
+#     angles_int = points[:n_int, 3:]
+#     dom_b = points[n_int:, :3]
+#     angles_b = points[n_int:, 3:]
+#     dom = torch.cat([generator_domain_samples(dom_int, boundary=False), generator_domain_samples(dom_b, boundary=True)])
+#     s = torch.cat([generator_param_samples(angles_int), generator_param_samples(angles_b)])
+#
+#     x = dom[:, 0].reshape(-1, 1)
+#     y = dom[:, 1].reshape(-1, 1)
+#     z = dom[:, 2].reshape(-1, 1)
+#
+#     u = exact(x.reshape(-1, ), y.reshape(-1, ), z.reshape(-1, ), s[:, 0], s[:, 1], s[:, 2]).reshape(-1, 1)
+#     g = G(x.reshape(-1, ), y.reshape(-1, ), z.reshape(-1, )).reshape(-1, 1)
+#
+#     if assign_g:
+#         return torch.cat([x, y, z, s], 1), g
+#     else:
+#         return torch.cat([x, y, z, s], 1), u
+
+
 
 def add_internal_points(n_internal):
-    x_internal = torch.tensor(()).new_full(size=(n_internal, parameters_values.shape[0] + domain_values.shape[0]), fill_value=0.0)
-    y_internal = torch.tensor(()).new_full(size=(n_internal, 1), fill_value=0.0)
+    # n_int = int(n_internal * 3 / 4)
+    print("Adding Internal Points")
+    x = torch.rand([n_internal, 1]).type(torch.FloatTensor)
+    mu = 1- 2 * torch.rand([n_internal, 1]).type(torch.FloatTensor)
+    exact = torch.sin(pi * mu) ** 2 * torch.cos(pi / 2 * x)
+    return torch.cat([x, mu], 1), exact
 
-    return x_internal, y_internal
 
 
 def add_boundary(n_boundary):
@@ -216,17 +265,10 @@ def plotting(model, images_path, extrema, solid):
 
     x_l = inputs[:, 0]
     mu_l = inputs[:, 1]
-
     exact = torch.sin(pi * mu_l) ** 2 * torch.cos(pi / 2 * x_l)
     exact = exact.reshape(x.shape[0], mu.shape[0])
-    x_meas = x_l
-    mu_meas = mu_l
-    u_meas = exact
-    torch.save(x_meas, 'meas.pt')
-    torch.save(mu_meas, 'meas.pt')
-    torch.save(u_meas, 'meas.pt')
-    print(torch.mean(abs(sol - exact) / torch.mean(abs(exact))))
 
+    print(torch.mean(abs(sol - exact) / torch.mean(abs(exact))))
     levels = [0.00, 0.006, 0.013, 0.021, 0.029, 0.04, 0.047, 0.06, 0.071, 0.099, 0.143, 0.214, 0.286, 0.357, 0.429, 0.5, 0.571, 0.643, 0.714, 0.786, 0.857, 0.929, 1]
     norml = matplotlib.colors.BoundaryNorm(levels, 256)
     plt.figure()

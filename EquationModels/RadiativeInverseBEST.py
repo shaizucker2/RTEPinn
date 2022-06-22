@@ -233,7 +233,7 @@ def add_internal_points(n_internal):
         return torch.cat([x, y, z, s], 1), u
 
 
-def add_boundary(n_boundary):
+def   add_boundary(n_boundary):
     print("Adding Boundary")
     points = get_points(n_boundary, 5, type_of_points, 16)
     dom = points[:, :3]

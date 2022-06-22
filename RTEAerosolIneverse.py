@@ -1,7 +1,22 @@
 from ImportFile import *
 
 pi = math.pi
+#TODO make sure this is the best place to put this
+space_dimensions = 1
+time_dimensions = 0
+output_dimension = 1
+assign_g = True
+average = False
+type_of_points = "sobol"
+r_min = 0.0
+input_dimensions = 1
+kernel_type = "isotropic"
+n_quad = 10
 
+if torch.cuda.is_available():
+    dev = torch.device('cuda')
+else:
+    dev = torch.device("cpu")
 
 class Swish(nn.Module):
     def __init__(self, ):
@@ -257,83 +272,20 @@ class CustomLoss(torch.nn.Module):
 
             # Space dimensions
             # Not used for the radiative project, check at the else part
-            if not training_ic and Ec.extrema_values is not None:
-                for i in range(space_dimensions):
-                    half_len_x_b_train_i = int(x_b_train.shape[0] / (2 * space_dimensions))
+            u_pred_b, u_train_b = apply_BC(x_b_train, u_b_train, network)
+            u_pred_var_list.append(u_pred_b)
+            u_train_var_list.append(u_train_b)
 
-                    x_b_train_i = x_b_train[i * int(x_b_train.shape[0] / space_dimensions):(i + 1) * int(
-                        x_b_train.shape[0] / space_dimensions), :]
-                    u_b_train_i = u_b_train[i * int(x_b_train.shape[0] / space_dimensions):(i + 1) * int(
-                        x_b_train.shape[0] / space_dimensions), :]
-                    boundary = 0
-                    while boundary < 2:
-
-                        x_b_train_i_half = x_b_train_i[
-                                           half_len_x_b_train_i * boundary:half_len_x_b_train_i * (boundary + 1), :]
-                        u_b_train_i_half = u_b_train_i[
-                                           half_len_x_b_train_i * boundary:half_len_x_b_train_i * (boundary + 1), :]
-
-                        if BC[i][boundary][j] == "func":
-                            u_pred_var_list.append(network(x_b_train_i_half)[:, j])
-                            u_train_var_list.append(u_b_train_i_half[:, j])
-                        if BC[i][boundary][j] == "der":
-                            x_b_train_i_half.requires_grad = True
-                            f_val = network(x_b_train_i_half)[:, j]
-                            inputs = torch.ones(x_b_train_i_half.shape[0], )
-                            if not computing_error and torch.cuda.is_available():
-                                inputs = inputs.cuda()
-                            der_f_vals = \
-                                torch.autograd.grad(f_val, x_b_train_i_half, grad_outputs=inputs, create_graph=True)[0][:, i]
-                            u_pred_var_list.append(der_f_vals)
-                            u_train_var_list.append(u_b_train_i_half[:, j])
-                        elif BC[i][boundary][j] == "periodic":
-                            x_half_1 = x_b_train_i_half
-                            x_half_2 = x_b_train_i[
-                                       half_len_x_b_train_i * (boundary + 1):half_len_x_b_train_i * (boundary + 2), :]
-                            x_half_1.requires_grad = True
-                            x_half_2.requires_grad = True
-                            inputs = torch.ones(x_half_1.shape[0], )
-                            if not computing_error and torch.cuda.is_available():
-                                inputs = inputs.cuda()
-                            pred_first_half = network(x_half_1)[:, j]
-                            pred_second_half = network(x_half_2)[:, j]
-                            der_pred_first_half = \
-                                torch.autograd.grad(pred_first_half, x_half_1, grad_outputs=inputs, create_graph=True)[
-                                    0]
-                            der_pred_first_half_i = der_pred_first_half[:, i]
-                            der_pred_second_half = \
-                                torch.autograd.grad(pred_second_half, x_half_2, grad_outputs=inputs, create_graph=True)[
-                                    0]
-                            der_pred_second_half_i = der_pred_second_half[:, i]
-
-                            u_pred_var_list.append(pred_second_half)
-                            u_train_var_list.append(pred_first_half)
-
-                            u_pred_var_list.append(der_pred_second_half_i)
-                            u_train_var_list.append(der_pred_first_half_i)
-
-                            boundary = boundary + 1
-
-                        boundary = boundary + 1
-            else:
-                u_pred_b, u_train_b = Ec.apply_BC(x_b_train, u_b_train, network)
-                u_pred_var_list.append(u_pred_b)
-                u_train_var_list.append(u_train_b)
-
-                if Ec.time_dimensions != 0:
-                    u_pred_0, u_train_0 = Ec.apply_IC(x_u_train, u_train, network)
-                    u_pred_var_list.append(u_pred_0)
-                    u_train_var_list.append(u_train_0)
-
+            # Time Dimension
             if x_u_train.shape[0] != 0:
                 # This is used to solve the radiative inverse problem
                 try:
                     if j == 0:
-                        #S.Z This is usually true
-                        if Ec.assign_g:
+                        if assign_g:
                             # print("Assign G")
-                            g = Ec.get_G(network, x_u_train[:, :3], Ec.n_quad)
+                            g = get_G(network, x_u_train[:, :3], n_quad)
                             u_pred_var_list.append(g)
+
                         else:
                             # print("Not assign G")
                             u_pred_var_list.append(network(x_u_train)[:, j])
@@ -341,18 +293,18 @@ class CustomLoss(torch.nn.Module):
                     if j == 1:
                         # print(x_b_train)
                         phys_coord_b = x_b_train[:, :3]
-                        if Ec.average:
-                            u_pred_var_list.append(Ec.get_average_inf_q(network, phys_coord_b, 10))
+                        if average:
+                            u_pred_var_list.append(get_average_inf_q(network, phys_coord_b, 10))
                         else:
                             u_pred_var_list.append(network(x_b_train)[:, j])
-                        u_train_var_list.append(Ec.K(phys_coord_b[:, 0], phys_coord_b[:, 1], phys_coord_b[:, 2]))
+                        u_train_var_list.append(K(phys_coord_b[:, 0], phys_coord_b[:, 1], phys_coord_b[:, 2]))
                         # Compute tikonov regularization
 
                         x_f_train.requires_grad = True
                         k = network(x_f_train)[:, j].reshape(-1, )
                         lambda_k = 0.01
 
-                        grad_k = torch.autograd.grad(k, x_f_train, grad_outputs=torch.ones(x_f_train.shape[0], ).to(Ec.dev), create_graph=True)[0]
+                        grad_k = torch.autograd.grad(k, x_f_train, grad_outputs=torch.ones(x_f_train.shape[0], ).to(dev), create_graph=True)[0]
 
                         grad_k_x = grad_k[:, 0]
                         grad_k_y = grad_k[:, 1]
@@ -365,31 +317,6 @@ class CustomLoss(torch.nn.Module):
                     u_pred_var_list.append(network(x_u_train)[:, j])
                     u_train_var_list.append(u_train[:, j])
 
-            if x_obj is not None and not training_ic:
-                if BC[-1][j] == "func":
-                    u_pred_var_list.append(network(x_obj)[:, j])
-                    u_train_var_list.append(u_obj[:, j])
-
-                if BC[-1][j] == "der":
-                    x_obj_grad = x_obj.clone()
-                    x_obj_transl = x_obj_grad[(np.arange(0, x_obj_grad.shape[0]) + 1) % (x_obj_grad.shape[0]), :]
-                    x_obj_mean = (x_obj_grad + x_obj_transl) / 2
-                    x_obj_mean.requires_grad = True
-                    f_val = network(x_obj_mean)[:, j]
-                    inputs = torch.ones(x_obj_mean.shape[0], )
-                    if not computing_error and torch.cuda.is_available():
-                        inputs = inputs.cuda()
-                    der_f_vals_x = torch.autograd.grad(f_val, x_obj_mean, grad_outputs=inputs, create_graph=True)[0][:,
-                                   0]
-                    der_f_vals_y = torch.autograd.grad(f_val, x_obj_mean, grad_outputs=inputs, create_graph=True)[0][:,
-                                   1]
-                    t = (x_obj_grad - x_obj_transl)
-
-                    nx = t[:, 1] / torch.sqrt(t[:, 1] ** 2 + t[:, 0] ** 2)
-                    ny = -t[:, 0] / torch.sqrt(t[:, 1] ** 2 + t[:, 0] ** 2)
-                    der_n = der_f_vals_x * nx + der_f_vals_y * ny
-                    u_pred_var_list.append(der_n)
-                    u_train_var_list.append(u_obj[:, j])
 
         u_pred_tot_vars = torch.cat(u_pred_var_list, 0)
         u_train_tot_vars = torch.cat(u_train_var_list, 0)
@@ -404,7 +331,7 @@ class CustomLoss(torch.nn.Module):
 
         if not training_ic:
 
-            res = Ec.compute_res(network, x_f_train, space_dimensions, solid_object, computing_error)
+            res = compute_res(network, x_f_train, space_dimensions, solid_object, computing_error)
             res_train = torch.tensor(()).new_full(size=(res.shape[0],), fill_value=0.0)
 
             if not computing_error and torch.cuda.is_available():
@@ -587,3 +514,45 @@ def StandardFit(model, optimizer_ADAM, optimizer_LBFGS, training_set_class, vali
     history = [train_losses, val_losses] if validation_set_clsss is not None else [train_losses]
 
     return train_losses[0]
+
+
+def compute_res(network, x_f_train, space_dimensions, solid_object, computing_error):
+    x_f_train.requires_grad = True
+    x = x_f_train[:, 0]
+    y = x_f_train[:, 1]
+    z = x_f_train[:, 2]
+    s = x_f_train[:, 3:]
+
+    phys_coord = x_f_train[:, :3]
+
+    u = network(x_f_train)[:, 0].reshape(-1, )
+    if average:
+        absorb = get_average_inf_q(network, phys_coord, n_quad)
+    else:
+        absorb = network(x_f_train)[:, 1].reshape(-1, )
+
+    grad_u = torch.autograd.grad(u, x_f_train, grad_outputs=torch.ones(x_f_train.shape[0], ).to(dev), create_graph=True)[0]
+
+    grad_u_x = grad_u[:, 0]
+    grad_u_y = grad_u[:, 1]
+    grad_u_z = grad_u[:, 2]
+    s1 = s[:, 0]
+    s2 = s[:, 1]
+    s3 = s[:, 2]
+
+    scatter_kernel = compute_scatter(x_f_train, network)
+
+    res = s1 * grad_u_x + s2 * grad_u_y + s3 * grad_u_z + (absorb + S(x, y, z)) * u - f(x, y, z, s1, s2, s3) - S(x, y, z) * scatter_kernel
+
+    return res
+
+
+
+
+
+
+
+
+
+
+

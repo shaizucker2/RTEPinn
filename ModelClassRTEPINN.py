@@ -1,7 +1,24 @@
+import torch
+
 from ImportFile import *
 
 pi = math.pi
+#TODO make sure this is the best place to put this
+space_dimensions = 3
+time_dimensions = 0
+output_dimension = 2
+assign_g = True
+average = False
+type_of_points = "sobol"
+r_min = 0.0
+input_dimensions = 3
+kernel_type = "isotropic"
+n_quad = 10
 
+if torch.cuda.is_available():
+    dev = torch.device('cuda')
+else:
+    dev = torch.device("cpu")
 
 class Swish(nn.Module):
     def __init__(self, ):
@@ -36,6 +53,7 @@ class Pinns(nn.Module):
     def __init__(self, input_dimension, output_dimension, network_properties, additional_models=None,
                  solid_object=None):
         super(Pinns, self).__init__()
+        self.real_kernal = torch.Tensor([1.0, 1.98398, 1.50823, 0.70075, 0.23489, 0.05133, 0.00760, 0.00048])
         self.input_dimension = input_dimension
         self.output_dimension = output_dimension
         self.n_hidden_layers = int(network_properties["hidden_layers"])
@@ -45,15 +63,20 @@ class Pinns(nn.Module):
         self.regularization_param = float(network_properties["regularization_parameter"])
         self.num_epochs = int(network_properties["epochs"])
         self.act_string = str(network_properties["activation"])
-
+        self.n_coef = 8
         self.input_layer = nn.Linear(self.input_dimension, self.neurons)
         self.hidden_layers = nn.ModuleList(
             [nn.Linear(self.neurons, self.neurons) for _ in range(self.n_hidden_layers - 1)])
         self.output_layer = nn.Linear(self.neurons, self.output_dimension)
 
-        self.solid_object = solid_object
-        self.additional_models = additional_models
-
+        self.solid_object = solid_object #TODO delete this param
+        self.additional_models = additional_models #TODO what is this
+        #S.Z
+        self.inverse_input_layer = nn.Linear(1, 100)
+        self.inverse_hidden_layers = nn.ModuleList(
+            [nn.Linear(100, 100) for _ in range(3)])
+        self.inverse_output_layer = nn.Linear(100, self.n_coef) #fitting the number of coef
+        #end of S.Z
         self.activation = activation(self.act_string)
         # self.a = nn.Parameter(torch.randn((1,)))
 
@@ -63,13 +86,19 @@ class Pinns(nn.Module):
             x = self.activation(l(x))
         return self.output_layer(x)
 
+    def forward_coef(self, x):
+        x = torch.reshape(x, (x.shape[0], 1))
+        x = self.activation(self.inverse_input_layer(x))
+        for l in self.inverse_hidden_layers:
+            x = self.activation(l(x))
+        return self.inverse_output_layer(x)
 
 def fit(model, optimizer_ADAM, optimizer_LBFGS, epoch_ADAM, training_set_class, validation_set_clsss=None, verbose=False, training_ic=False):
     num_epochs = model.num_epochs
 
     train_losses = list([np.NAN])
     val_losses = list()
-    freq = 50
+    freq = 50 #TODO what this does?
 
     training_coll = training_set_class.data_coll
     training_boundary = training_set_class.data_boundary
@@ -125,11 +154,11 @@ def fit(model, optimizer_ADAM, optimizer_LBFGS, epoch_ADAM, training_set_class, 
                     del u_train_
                     torch.cuda.empty_cache()
         elif len(training_boundary) == 0 and len(training_initial_internal) != 0:
-            for step, ((x_coll_train_, u_coll_train_), (x_u_train_, u_train_)) in enumerate(zip(training_coll, training_initial_internal)):
-
+            for step, ((x_coll_train_, u_coll_train_), (x_b_train_, u_b_train_), (x_u_train_, u_train_)) in enumerate(
+                    zip(training_coll, training_boundary, training_initial_internal)):
                 x_ob = None
                 u_ob = None
-                #S.Z 2 was 4
+                #S.Z changed to 2 2 was 4
                 x_b_train_ = torch.full((4, 1), 0)
                 u_b_train_ = torch.full((4, 1), 0)
 
@@ -237,6 +266,7 @@ class CustomLoss(torch.nn.Module):
 
     def __init__(self):
         super(CustomLoss, self).__init__()
+        real_kernal = torch.Tensor([1.0, 1.98398, 1.50823, 0.70075, 0.23489, 0.05133, 0.00760, 0.00048])
 
     def forward(self, network, x_u_train, u_train, x_b_train, u_b_train, x_f_train, x_obj, u_obj, dataclass,
                 training_ic, computing_error=False):
@@ -246,116 +276,25 @@ class CustomLoss(torch.nn.Module):
         order_regularizer = network.kernel_regularizer
         space_dimensions = dataclass.space_dimensions
         BC = dataclass.BC
-        solid_object = dataclass.obj
+        solid_object = dataclass.obj #TODO this will always be none
 
         if x_b_train.shape[0] <= 1:
             space_dimensions = 0
 
         u_pred_var_list = list()
         u_train_var_list = list()
+        # S.Z Add points for training
         for j in range(dataclass.output_dimension):
 
             # Space dimensions
-            # Not used for the radiative project, check at the else part
-            if not training_ic and Ec.extrema_values is not None:
-                for i in range(space_dimensions):
-                    half_len_x_b_train_i = int(x_b_train.shape[0] / (2 * space_dimensions))
+            u_pred_b, u_train_b = Ec.apply_BC(x_b_train, u_b_train, network)
+            u_pred_var_list.append(u_pred_b)
+            u_train_var_list.append(u_train_b)
 
-                    x_b_train_i = x_b_train[i * int(x_b_train.shape[0] / space_dimensions):(i + 1) * int(
-                        x_b_train.shape[0] / space_dimensions), :]
-                    u_b_train_i = u_b_train[i * int(x_b_train.shape[0] / space_dimensions):(i + 1) * int(
-                        x_b_train.shape[0] / space_dimensions), :]
-                    boundary = 0
-                    while boundary < 2:
+            #Deleted the Exception part
+            u_pred_var_list.append(network(x_u_train)[:, j])
+            u_train_var_list.append(u_train[:, j])
 
-                        x_b_train_i_half = x_b_train_i[
-                                           half_len_x_b_train_i * boundary:half_len_x_b_train_i * (boundary + 1), :]
-                        u_b_train_i_half = u_b_train_i[
-                                           half_len_x_b_train_i * boundary:half_len_x_b_train_i * (boundary + 1), :]
-
-                        if BC[i][boundary][j] == "func":
-                            u_pred_var_list.append(network(x_b_train_i_half)[:, j])
-                            u_train_var_list.append(u_b_train_i_half[:, j])
-                        if BC[i][boundary][j] == "der":
-                            x_b_train_i_half.requires_grad = True
-                            f_val = network(x_b_train_i_half)[:, j]
-                            inputs = torch.ones(x_b_train_i_half.shape[0], )
-                            if not computing_error and torch.cuda.is_available():
-                                inputs = inputs.cuda()
-                            der_f_vals = \
-                                torch.autograd.grad(f_val, x_b_train_i_half, grad_outputs=inputs, create_graph=True)[0][:, i]
-                            u_pred_var_list.append(der_f_vals)
-                            u_train_var_list.append(u_b_train_i_half[:, j])
-                        elif BC[i][boundary][j] == "periodic":
-                            x_half_1 = x_b_train_i_half
-                            x_half_2 = x_b_train_i[
-                                       half_len_x_b_train_i * (boundary + 1):half_len_x_b_train_i * (boundary + 2), :]
-                            x_half_1.requires_grad = True
-                            x_half_2.requires_grad = True
-                            inputs = torch.ones(x_half_1.shape[0], )
-                            if not computing_error and torch.cuda.is_available():
-                                inputs = inputs.cuda()
-                            pred_first_half = network(x_half_1)[:, j]
-                            pred_second_half = network(x_half_2)[:, j]
-                            der_pred_first_half = \
-                                torch.autograd.grad(pred_first_half, x_half_1, grad_outputs=inputs, create_graph=True)[
-                                    0]
-                            der_pred_first_half_i = der_pred_first_half[:, i]
-                            der_pred_second_half = \
-                                torch.autograd.grad(pred_second_half, x_half_2, grad_outputs=inputs, create_graph=True)[
-                                    0]
-                            der_pred_second_half_i = der_pred_second_half[:, i]
-
-                            u_pred_var_list.append(pred_second_half)
-                            u_train_var_list.append(pred_first_half)
-
-                            u_pred_var_list.append(der_pred_second_half_i)
-                            u_train_var_list.append(der_pred_first_half_i)
-
-                            boundary = boundary + 1
-
-                        boundary = boundary + 1
-            else:
-                u_pred_b, u_train_b = Ec.apply_BC(x_b_train, u_b_train, network)
-                u_pred_var_list.append(u_pred_b)
-                u_train_var_list.append(u_train_b)
-
-                if Ec.time_dimensions != 0:
-                    u_pred_0, u_train_0 = Ec.apply_IC(x_u_train, u_train, network)
-                    u_pred_var_list.append(u_pred_0)
-                    u_train_var_list.append(u_train_0)
-
-            # Time Dimension
-            if x_u_train.shape[0] != 0:
-                # This is used to solve the radiative inverse problem
-                u_pred_var_list.append(network(x_u_train)[:, j])
-                u_train_var_list.append(u_train[:, j])
-
-            if x_obj is not None and not training_ic:
-                if BC[-1][j] == "func":
-                    u_pred_var_list.append(network(x_obj)[:, j])
-                    u_train_var_list.append(u_obj[:, j])
-
-                if BC[-1][j] == "der":
-                    x_obj_grad = x_obj.clone()
-                    x_obj_transl = x_obj_grad[(np.arange(0, x_obj_grad.shape[0]) + 1) % (x_obj_grad.shape[0]), :]
-                    x_obj_mean = (x_obj_grad + x_obj_transl) / 2
-                    x_obj_mean.requires_grad = True
-                    f_val = network(x_obj_mean)[:, j]
-                    inputs = torch.ones(x_obj_mean.shape[0], )
-                    if not computing_error and torch.cuda.is_available():
-                        inputs = inputs.cuda()
-                    der_f_vals_x = torch.autograd.grad(f_val, x_obj_mean, grad_outputs=inputs, create_graph=True)[0][:,
-                                   0]
-                    der_f_vals_y = torch.autograd.grad(f_val, x_obj_mean, grad_outputs=inputs, create_graph=True)[0][:,
-                                   1]
-                    t = (x_obj_grad - x_obj_transl)
-
-                    nx = t[:, 1] / torch.sqrt(t[:, 1] ** 2 + t[:, 0] ** 2)
-                    ny = -t[:, 0] / torch.sqrt(t[:, 1] ** 2 + t[:, 0] ** 2)
-                    der_n = der_f_vals_x * nx + der_f_vals_y * ny
-                    u_pred_var_list.append(der_n)
-                    u_train_var_list.append(u_obj[:, j])
 
         u_pred_tot_vars = torch.cat(u_pred_var_list, 0)
         u_train_tot_vars = torch.cat(u_train_var_list, 0)
@@ -366,7 +305,7 @@ class CustomLoss(torch.nn.Module):
 
         assert not torch.isnan(u_pred_tot_vars).any()
 
-        loss_vars = (torch.mean(abs(u_pred_tot_vars - u_train_tot_vars) ** 2))
+        loss_vars = (torch.mean((u_pred_tot_vars - u_train_tot_vars) ** 2))
 
         if not training_ic:
 
@@ -377,7 +316,7 @@ class CustomLoss(torch.nn.Module):
                 res = res.cuda()
                 res_train = res_train.cuda()
 
-            loss_res = (torch.mean(abs(res) ** 2))
+            loss_res = (torch.mean(res ** 2))
 
             u_pred_var_list.append(res)
             u_train_var_list.append(res_train)
@@ -390,6 +329,7 @@ class CustomLoss(torch.nn.Module):
             loss_v = torch.log10(loss_vars + lambda_reg * loss_reg)
         print("final loss:", loss_v.detach().cpu().numpy().round(4), " ", torch.log10(loss_vars).detach().cpu().numpy().round(4), " ",
               torch.log10(loss_res).detach().cpu().numpy().round(4))
+        # print("Inverse accuracy:",  (network.forward_kernal(0.5) - self.real_kernal) ** 2)
         return loss_v
 
 
@@ -553,3 +493,146 @@ def StandardFit(model, optimizer_ADAM, optimizer_LBFGS, training_set_class, vali
     history = [train_losses, val_losses] if validation_set_clsss is not None else [train_losses]
 
     return train_losses[0]
+
+
+
+
+# def apply_BC(x_boundary, u_boundary, model):
+#     x = x_boundary[:, 0]
+#     y = x_boundary[:, 1]
+#     z = x_boundary[:, 2]
+#
+#     s = x_boundary[:, 3:]
+#
+#     xyz = torch.cat([x.reshape(-1, 1), y.reshape(-1, 1), z.reshape(-1, 1)], 1)
+#     if torch.cuda.is_available():
+#         xyz = xyz.cuda()
+#     xyz_mod = torch.where(xyz == 0, torch.tensor(-1.).to(dev), xyz)
+#     if torch.cuda.is_available():
+#         xyz_mod = xyz_mod.cuda()
+#
+#     n = torch.where(((xyz_mod != 1) & (xyz_mod != -1)), torch.tensor(0.).to(dev), xyz_mod)
+#     if torch.cuda.is_available():
+#         n = n.cuda()
+#
+#     n1 = n[:, 0]
+#     n2 = n[:, 1]
+#     n3 = n[:, 2]
+#     s1 = s[:, 0]
+#     s2 = s[:, 1]
+#     s3 = s[:, 2]
+#
+#     scalar = (n1 * s1 + n2 * s2 + n3 * s3) < 0
+#
+#     x_boundary_inf = x_boundary[scalar, :]
+#     x_boundary_out = x_boundary[~scalar, :]
+#     u_boundary_inf = u_boundary[scalar, :]
+#
+#     u_pred = model(x_boundary_inf)[:, 0]
+#
+#     return u_pred.reshape(-1, ), u_boundary_inf.reshape(-1, )
+#
+# def get_G(intensity, phys_coord, n_quad):
+#
+#     quad_points, w = np.polynomial.legendre.leggauss(n_quad)
+#
+#     mat_quad = np.transpose([np.repeat(quad_points, len(quad_points)), np.tile(quad_points, len(quad_points))])
+#     w = w.reshape(-1, 1)
+#     mat_weight = np.matmul(w, w.T).reshape(n_quad * n_quad, 1)
+#     mat_weight = torch.from_numpy(mat_weight).type(torch.FloatTensor).to(dev)
+#
+#     mat_quad[:, 0] = pi * (mat_quad[:, 0] + 1)
+#     mat_quad[:, 1] = pi / 2 * (mat_quad[:, 1] + 1)
+#     mat_quad = torch.from_numpy(mat_quad).type(torch.FloatTensor).to(dev)
+#
+#     s = get_s(mat_quad)
+#
+#     s_new = torch.cat(phys_coord.shape[0] * [s]).to(dev)
+#     phys_coord_new = tile(phys_coord, dim=0, n_tile=s.shape[0]).to(dev)
+#
+#     inputs = torch.cat([phys_coord_new, s_new], 1).to(dev)
+#
+#     u = intensity(inputs)[:, 0].reshape(-1, )
+#     u = u.reshape(phys_coord.shape[0], n_quad * n_quad)
+#
+#     sin_theta_v = torch.sin(mat_quad[:, 1]).reshape(-1, 1)
+#
+#     G = pi ** 2 / 2 * torch.matmul(u, sin_theta_v * mat_weight).reshape(-1, )
+#
+#     return G
+#
+# def get_s(params):
+#     s = torch.tensor(()).new_full(size=(params.shape[0], 3), fill_value=0.0)
+#     phi = params[:, 0]
+#     theta = params[:, 1]
+#     s[:, 0] = torch.cos(phi) * torch.sin(theta)
+#     s[:, 1] = torch.sin(phi) * torch.sin(theta)
+#     s[:, 2] = torch.cos(theta)
+#     return s
+#
+# def tile(a, dim, n_tile):
+#     init_dim = a.size(dim)
+#     repeat_idx = [1] * a.dim()
+#     repeat_idx[dim] = n_tile
+#     a = a.repeat(*(repeat_idx))
+#     order_index = torch.LongTensor(np.concatenate([init_dim * np.arange(n_tile) + i for i in range(init_dim)]))
+#     return torch.index_select(a, dim, order_index.to(dev))
+#
+# def K(x, y, z):
+#     k = x ** 2 * y ** 2 * z ** 2
+#     return k
+#
+# def get_average_inf_q(intensity, phys_coord, n_quad):
+#     quad_points, w = np.polynomial.legendre.leggauss(n_quad)
+#
+#     mat_quad = np.transpose([np.repeat(quad_points, len(quad_points)), np.tile(quad_points, len(quad_points))])
+#     w = w.reshape(-1, 1)
+#     mat_weight = np.matmul(w, w.T).reshape(n_quad * n_quad, 1)
+#     mat_weight = torch.from_numpy(mat_weight).type(torch.FloatTensor).to(dev)
+#
+#     mat_quad[:, 0] = pi * (mat_quad[:, 0] + 1)
+#     mat_quad[:, 1] = pi / 2 * (mat_quad[:, 1] + 1)
+#     mat_quad = torch.from_numpy(mat_quad).type(torch.FloatTensor).to(dev)
+#
+#     s = get_s(mat_quad)
+#
+#     s_new = torch.cat(phys_coord.shape[0] * [s]).to(dev)
+#     phys_coord_new = tile(phys_coord, dim=0, n_tile=s.shape[0]).to(dev)
+#
+#     inputs = torch.cat([phys_coord_new, s_new], 1).to(dev)
+#
+#     u = intensity(inputs)[:, 1].reshape(-1, )
+#     u = u.reshape(phys_coord.shape[0], n_quad * n_quad)
+#
+#     sin_theta_v = torch.sin(mat_quad[:, 1]).reshape(-1, 1)
+#
+#     average = pi ** 2 / 2 * torch.matmul(u, sin_theta_v * mat_weight).reshape(-1, )
+#
+#     return average / (4 * pi)
+#
+# def compute_scatter(x_train, model):
+#     phys_coord = x_train[:, :3]
+#     s_train = x_train[:, 3:]
+#     scatter_values = get_G(model, phys_coord, n_quad) / (4 * pi)
+#     return scatter_values
+#
+# def S(x, y, z):
+#     sigma = 0.5 * torch.ones(x.shape)
+#     return sigma.to(dev)
+#
+# def f(x, y, z, s1, s2, s3):
+#     c = -4 / pi * (3 + (s1 + s2 + s3) ** 2)
+#     source = c * (s1 * (2 * x - 1) * (y ** 2 - y) * (z ** 2 - z) +
+#                   s2 * (x ** 2 - x) * (2 * y - 1) * (z ** 2 - z) +
+#                   s3 * (x ** 2 - x) * (y ** 2 - y) * (2 * z - 1))
+#
+#     source = source + (K(x, y, z) + S(x, y, z)) * exact(x, y, z, s1, s2, s3)
+#     source = source - S(x, y, z) * G(x, y, z) / (4 * pi)
+#
+#     return source
+#
+# def exact(x, y, z, s1, s2, s3):
+#     return -4 / pi * (3 + (s1 + s2 + s3) ** 2) * (x ** 2 - x) * (y ** 2 - y) * (z ** 2 - z)
+#
+# def G(x, y, z):
+#     return -64 * (x ** 2 - x) * (y ** 2 - y) * (z ** 2 - z)

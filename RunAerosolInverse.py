@@ -1,159 +1,64 @@
 from ImportFile import *
+import DataCreation as dc
+from datetime import datetime
+pi = math.pi
+# torch.manual_seed(42)
+
+from ImportFile import *
 from datetime import datetime
 pi = math.pi
 torch.manual_seed(42)
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 
 
-def initialize_inputs(len_sys_argv):
-    if len_sys_argv == 1:
-
-        # Random Seed for sampling the dataset
-        sampling_seed_ = 32
-
-        # Number of training+validation points
-        n_coll_ = 8192 #TODO what is that
-        n_u_ = 120 #TODO what is that
-        n_int_ = 20000 #was 4096
-
-        # # Only for Navier Stokes
-        n_object = 0
-        ob = None
-
-        # Additional Info
-        folder_path_ = "Inverse"
-        point_ = "sobol"
-        validation_size_ = 0.0
-        network_properties_ = {
-            "hidden_layers": 4,
-            "neurons": 20,
-            "residual_parameter": 1,
-            "kernel_regularizer": 2,
-            "regularization_parameter": 0,
-            "batch_size": (n_coll_ + n_u_ + n_int_),
-            "epochs": 1,
-            "activation": "tanh"
-        }
-        retrain_ = 32
-        shuffle_ = False
-#I Don't care about this part
-    elif len_sys_argv == 17:
-        print(sys.argv)
-        # Random Seed for sampling the dataset
-        sampling_seed_ = int(sys.argv[1])
-
-        # Number of training+validation points
-        n_coll_ = int(sys.argv[2])
-        n_u_ = int(sys.argv[3])
-        n_int_ = int(sys.argv[4])
-
-        # Only for Navier Stokes
-        n_object = int(sys.argv[5])
-        if sys.argv[6] == "None":
-            ob = None
-        else:
-            ob = sys.argv[6]
-
-        # Additional Info
-        folder_path_ = sys.argv[7]
-        point_ = sys.argv[8]
-        validation_size_ = float(sys.argv[9])
-        network_properties_ = json.loads(sys.argv[10])
-        retrain_ = sys.argv[11]
-        if sys.argv[12] == "false":
-            shuffle_ = False
-        else:
-            shuffle_ = True
-    else:
-        raise ValueError("One input is missing")
-
-    return sampling_seed_, n_coll_, n_u_, n_int_, n_object, ob, folder_path_, point_, validation_size_, network_properties_, retrain_, shuffle_
 
 
-sampling_seed, N_coll, N_u, N_int, N_object, Ob, folder_path, point, validation_size, network_properties, retrain, shuffle = initialize_inputs(len(sys.argv))
+sampling_seed, N_coll, N_u, N_int, folder_path, point, validation_size, network_properties, retrain, shuffle = dc.initialize_inputs(len(sys.argv))
 #also not in the one dimentional case
-if Ec.extrema_values is not None:
-    extrema = Ec.extrema_values
-    space_dimensions = Ec.space_dimensions
-    time_dimension = Ec.time_dimensions
-    parameter_dimensions = Ec.parameter_dimensions
 
-    print(space_dimensions, time_dimension, parameter_dimensions)
-else:
-    print("Using free shape. Make sure you have the functions:")
-    print("     - add_boundary(n_samples)")
-    print("     - add_collocation(n_samples)")
-    print("in the Equation file")
-
-    extrema = None
-    space_dimensions = Ec.space_dimensions
-    time_dimension = Ec.time_dimensions
+extrema = None
+space_dimensions = 3
+#TODO get rid of this
 try:
-    parameters_values = Ec.parameters_values #this comes from the inverse best file, see how to use it
+    parameters_values = dc.parameters_values
     parameter_dimensions = parameters_values.shape[0]
-    type_point_param = Ec.type_of_points
+    type_point_param = "sobol"
 except AttributeError:
     print("No additional parameter found")
     parameters_values = None
     parameter_dimensions = 0
     type_point_param = None
 #TODO what is paramter dimension?
-input_dimensions = parameter_dimensions + time_dimension + space_dimensions
-output_dimension = Ec.output_dimension
+input_dimensions = parameter_dimensions + space_dimensions
+# since it is an output as a function of x and mu so a matrix essintially, TODO go back to make sure and get ready for
+# the addition of more dimensions in the polzrized case
+output_dimension = 2
+#I think the second output dimension is the k
 
 print(input_dimensions)
+#TODO understand what's mode
 mode = "none"
 max_iter = 50000
 if network_properties["epochs"] != 1:
     max_iter = 1
 
-#not relevent
-if Ob == "cylinder":
-    solid_object = ObjectClass.Cylinder(N_object, 1, input_dimensions, time_dimension, extrema, 1, 0, 0)
-elif Ob == "square":
-    solid_object = ObjectClass.Square(N_object, 1, input_dimensions, time_dimension, extrema, 2, 2, 0, 0)
-else:
-    solid_object = None
 
-print("######################################")
-print("*******Domain Properties********")
-print(extrema)
-print(input_dimensions)
 #S.Z it seems they take train points out of the entire givan point to assess the accuracy of the algorithm
 N_u_train = int(N_u * (1 - validation_size))
 N_coll_train = int(N_coll * (1 - validation_size))
 N_int_train = int(N_int * (1 - validation_size))
-N_object_train = int(N_object * (1 - validation_size))
+N_object_train = 0 #TODO try to delete this variable
 N_train = N_u_train + N_coll_train + N_int_train + N_object_train
 
 N_u_val = N_u - N_u_train
 N_coll_val = N_coll - N_coll_train
 N_int_val = N_int - N_int_train
-N_object_val = N_object - N_object_train
-N_val = N_u_val + N_coll_val + N_int_val + N_object_val
+# N_object_val = N_object - N_object_train TODO delete row
+N_val = N_u_val + N_coll_val + N_int_val
 #TODO understand what the hell happens here
-if space_dimensions > 0:
-    N_b_train = int(N_u_train / (4 * space_dimensions))
-else:
-    N_b_train = 0
-if time_dimension == 1:
-    N_i_train = N_u_train - 2 * space_dimensions * N_b_train
-elif time_dimension == 0:
-    N_b_train = int(N_u_train / (2 * space_dimensions))
-    N_i_train = 0
-else:
-    raise ValueError()
+N_b_train = int(N_u_train / (2 * space_dimensions))
+N_i_train = 0
 
-if space_dimensions > 1:
-    N_b_val = int(N_u_val / (4 * space_dimensions))
-else:
-    N_b_val = 0
-if time_dimension == 1:
-    N_i_val = N_u_val - 2 * space_dimensions * N_b_val
-elif time_dimension == 0:
-    N_i_val = 0
-else:
-    raise ValueError()
 
 print("\n######################################")
 print("*******Info Training Points********")
@@ -184,8 +89,8 @@ if batch_dim == "full":
 # ##############################################################################################
 # Datasets Creation
 print("DIMENSION")
-print(space_dimensions, time_dimension, parameter_dimensions)
-training_set_class = DefineDataset(extrema,
+print(space_dimensions, 0, parameter_dimensions)
+training_set_class = dc.DefineDataset(extrema,
                                    parameters_values,
                                    point,
                                    N_coll_train,
@@ -195,12 +100,13 @@ training_set_class = DefineDataset(extrema,
                                    batches=batch_dim,
                                    output_dimension=output_dimension,
                                    space_dimensions=space_dimensions,
-                                   time_dimensions=time_dimension,
+                                   time_dimensions=0,
                                    parameter_dimensions=parameter_dimensions,
                                    random_seed=sampling_seed,
-                                   obj=solid_object,
+                                   obj=None,
                                    shuffle=shuffle,
                                    type_point_param=type_point_param)
+
 training_set_class.assemble_dataset()
 training_set_no_batches = training_set_class.data_no_batches
 
@@ -230,7 +136,7 @@ optimizer_ADAM = optim.Adam(model.parameters(), lr=0.00005)
 if N_coll_train != 0:
     final_error_train = fit(model, optimizer_ADAM, optimizer_LBFGS, epoch_ADAM, training_set_class, validation_set_clsss=validation_set_class, verbose=True,
                             training_ic=False)
-else:
+else: #TODO when running it didn't enter else, please delete!
     final_error_train = StandardFit(model, optimizer_ADAM, optimizer_LBFGS, training_set_class, validation_set_clsss=validation_set_class, verbose=True)
 end = time.time() - start
 
@@ -255,13 +161,19 @@ final_error_test = 0
 # os.mkdir(model_path)
 #
 # L2_test, rel_L2_test = Ec.compute_generalization_error(model, extrema, images_path)
-Ec.plotting(model, 'Temp', extrema, solid_object)
+Ec.plotting(model, 'Temp', extrema, None)
 # Ec.plotting(model, images_path, extrema, solid_object)
 
 end_plotting = time.time() - end
 
 print("\nPlotting and Computing Time: ", end_plotting)
-
+time_str = datetime.now().strftime("%m-%d-%Y-%H:%M:%S")
+current_folder = folder_path +'\\' + time_str
+images_path = current_folder + "\\Images"
+os.mkdir(current_folder)
+os.mkdir(images_path)
+model_path = current_folder + "\\TrainedModel"
+os.mkdir(model_path)
 torch.save(model, model_path + "/model.pkl")
 with open(model_path + os.sep + "Information.csv", "w") as w:
     keys = list(network_properties.keys())
@@ -274,24 +186,24 @@ with open(model_path + os.sep + "Information.csv", "w") as w:
     for i in range(1, len(vals)):
         w.write("," + str(vals[i]))
 
-with open(folder_path + '/InfoModel.txt', 'w') as file:
-    file.write("Nu_train,"
-               "Nf_train,"
-               "Nint_train,"
-               "validation_size,"
-               "train_time,"
-               "L2_norm_test,"
-               "rel_L2_norm,"
-               "error_train,"
-               "error_val,"
-               "error_test\n")
-    file.write(str(N_u_train) + "," +
-               str(N_coll_train) + "," +
-               str(N_int_train) + "," +
-               str(validation_size) + "," +
-               str(end) + "," +
-               str(L2_test) + "," +
-               str(rel_L2_test) + "," +
-               str(final_error_train) + "," +
-               str(final_error_val) + "," +
-               str(final_error_test))
+# with open(folder_path + '/InfoModel.txt', 'w') as file:
+#     file.write("Nu_train,"
+#                "Nf_train,"
+#                "Nint_train,"
+#                "validation_size,"
+#                "train_time,"
+#                "L2_norm_test,"
+#                "rel_L2_norm,"
+#                "error_train,"
+#                "error_val,"
+#                "error_test\n")
+#     file.write(str(N_u_train) + "," +
+#                str(N_coll_train) + "," +
+#                str(N_int_train) + "," +
+#                str(validation_size) + "," +
+#                str(end) + "," +
+#                str(L2_test) + "," +
+#                str(rel_L2_test) + "," +
+#                str(final_error_train) + "," +
+#                str(final_error_val) + "," +
+#                str(final_error_test))

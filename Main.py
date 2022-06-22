@@ -12,9 +12,9 @@ def initialize_inputs(len_sys_argv):
         sampling_seed_ = 32
 
         # Number of training+validation points
-        n_coll_ = 8192 #TODO what is that
-        n_u_ = 120 #TODO what is that
-        n_int_ = 20000 #was 4096
+        n_coll_ = 8192
+        n_u_ = 120
+        n_int_ = 4096 #was 4096
 
         # # Only for Navier Stokes
         n_object = 0
@@ -36,34 +36,6 @@ def initialize_inputs(len_sys_argv):
         }
         retrain_ = 32
         shuffle_ = False
-#I Don't care about this part
-    elif len_sys_argv == 17:
-        print(sys.argv)
-        # Random Seed for sampling the dataset
-        sampling_seed_ = int(sys.argv[1])
-
-        # Number of training+validation points
-        n_coll_ = int(sys.argv[2])
-        n_u_ = int(sys.argv[3])
-        n_int_ = int(sys.argv[4])
-
-        # Only for Navier Stokes
-        n_object = int(sys.argv[5])
-        if sys.argv[6] == "None":
-            ob = None
-        else:
-            ob = sys.argv[6]
-
-        # Additional Info
-        folder_path_ = sys.argv[7]
-        point_ = sys.argv[8]
-        validation_size_ = float(sys.argv[9])
-        network_properties_ = json.loads(sys.argv[10])
-        retrain_ = sys.argv[11]
-        if sys.argv[12] == "false":
-            shuffle_ = False
-        else:
-            shuffle_ = True
     else:
         raise ValueError("One input is missing")
 
@@ -72,24 +44,16 @@ def initialize_inputs(len_sys_argv):
 
 sampling_seed, N_coll, N_u, N_int, N_object, Ob, folder_path, point, validation_size, network_properties, retrain, shuffle = initialize_inputs(len(sys.argv))
 #also not in the one dimentional case
-if Ec.extrema_values is not None:
-    extrema = Ec.extrema_values
-    space_dimensions = Ec.space_dimensions
-    time_dimension = Ec.time_dimensions
-    parameter_dimensions = Ec.parameter_dimensions
+print("Using free shape. Make sure you have the functions:")
+print("     - add_boundary(n_samples)")
+print("     - add_collocation(n_samples)")
+print("in the Equation file")
 
-    print(space_dimensions, time_dimension, parameter_dimensions)
-else:
-    print("Using free shape. Make sure you have the functions:")
-    print("     - add_boundary(n_samples)")
-    print("     - add_collocation(n_samples)")
-    print("in the Equation file")
-
-    extrema = None
-    space_dimensions = Ec.space_dimensions
-    time_dimension = Ec.time_dimensions
+extrema = None
+space_dimensions = Ec.space_dimensions
+time_dimension = Ec.time_dimensions
 try:
-    parameters_values = Ec.parameters_values #this comes from the inverse best file, see how to use it
+    parameters_values = Ec.parameters_values
     parameter_dimensions = parameters_values.shape[0]
     type_point_param = Ec.type_of_points
 except AttributeError:
@@ -97,7 +61,6 @@ except AttributeError:
     parameters_values = None
     parameter_dimensions = 0
     type_point_param = None
-#TODO what is paramter dimension?
 input_dimensions = parameter_dimensions + time_dimension + space_dimensions
 output_dimension = Ec.output_dimension
 
@@ -107,13 +70,7 @@ max_iter = 50000
 if network_properties["epochs"] != 1:
     max_iter = 1
 
-#not relevent
-if Ob == "cylinder":
-    solid_object = ObjectClass.Cylinder(N_object, 1, input_dimensions, time_dimension, extrema, 1, 0, 0)
-elif Ob == "square":
-    solid_object = ObjectClass.Square(N_object, 1, input_dimensions, time_dimension, extrema, 2, 2, 0, 0)
-else:
-    solid_object = None
+solid_object = None
 
 print("######################################")
 print("*******Domain Properties********")

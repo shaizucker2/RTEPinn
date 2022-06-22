@@ -66,13 +66,15 @@ class bcolors:
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
 
-import EquationModels.RadiativeInverseBEST as Ec
+# import EquationModels.RadiativeInverseBEST as Ec
 
-# import EquationModels.RadTrans1D as Ec
-
+import ModelInverseSZ as Ec
+# import Forward as Ec
 import ObjectClass
-from ModelClassTorch2 import *
-from DatasetTorch2 import *
+# from ModelClassTorch2 import * # S.Z 0606
+from ModelClassRTEPINN import *
+# from DataCreation import *
+from DataCreationAerosolInverse import *
 
 rc('font', **{'family': 'serif', 'serif': ['Computer Modern']})
 rc('text', usetex=True)

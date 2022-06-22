@@ -245,7 +245,7 @@ class DefineDataset:
             raise ValueError()
 
     def generator_points(self, samples, dim, random_seed):
-
+#inputs: samples, dim
         if self.type_of_coll == "random":
             torch.random.manual_seed(random_seed)
             return torch.rand([samples, dim]).type(torch.FloatTensor)
