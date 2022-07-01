@@ -227,7 +227,7 @@ def plotting(model, images_path, extrema, solid):
     torch.save(u_meas.reshape(-1), 'measu0107.pt')
     print(torch.mean(abs(sol - exact) / torch.mean(abs(exact))))
     print('something good')
-    levels = [0.00, 0.006, 0.013, 0.021, 0.029, 0.04, 0.047, 0.06, 0.071, 0.099, 0.143, 0.214, 0.286, 0.357, 0.429, 0.5, 0.571, 0.643, 0.714, 0.786, 0.857, 0.929, 1]
+    levels = [-5, 0.006, 0.013, 0.021, 0.029, 0.04, 0.047, 0.06, 0.071, 0.099, 0.143, 0.214, 0.286, 0.357, 0.429, 0.5, 0.571, 0.643, 0.714, 0.786, 0.857, 0.929, 1]
     norml = matplotlib.colors.BoundaryNorm(levels, 256)
     plt.figure()
     plt.contourf(x.reshape(-1, ), mu.reshape(-1, ), sol.detach().numpy().T, cmap='jet', levels=levels, norm=norml)

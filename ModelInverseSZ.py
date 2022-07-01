@@ -184,15 +184,22 @@ def compute_res(network, x_f_train, space_dimensions, solid_object, computing_er
 
 def add_internal_points(n_internal):
     # n_int = int(n_internal * 3 / 4)
+    # print("Adding Internal Points")
+    # x = torch.rand([n_internal, 1]).type(torch.FloatTensor)
+    # mu = 1- 2 * torch.rand([n_internal, 1]).type(torch.FloatTensor)
+    # exact = torch.sin(pi * mu) ** 2 * torch.cos(pi / 2 * x)
+    # return torch.cat([x, mu], 1), exact
+
     print("Adding Internal Points from the forward run")
-    x_meas = torch.load('measx0107.pt')
-    mu_meas = torch.load('measmu0107.pt')
-    meas_u = torch.Tensor(torch.load('measu0107.pt'))
+    x_meas = torch.load('measx0107.pt').detach()
+    mu_meas = torch.load('measmu0107.pt').detach()
+    exact = torch.Tensor(torch.load('measu0107.pt')).detach()
+    shuffle_ind = np.random.randint(0, len(x_meas), size = n_internal)
 
     # x = torch.rand([n_internal, 1]).type(torch.FloatTensor)
     # mu = 1- 2 * torch.rand([n_internal, 1]).type(torch.FloatTensor)
     # exact = torch.sin(pi * mu) ** 2 * torch.cos(pi / 2 * x)
-    return torch.cat([x_meas[0:n_internal], mu_meas[0:n_internal]], 1), meas_u[0:n_internal]
+    return torch.cat([x_meas[shuffle_ind].reshape(-1,1), mu_meas[shuffle_ind].reshape(-1,1)], 1), exact[shuffle_ind].reshape(-1,1)
 
 
 
@@ -279,19 +286,20 @@ def plotting(model, images_path, extrema, solid):
     plt.contourf(x.reshape(-1, ), mu.reshape(-1, ), sol.detach().numpy().T, cmap='jet', levels=levels, norm=norml)
     plt.axes().set_aspect('equal')
     plt.colorbar()
-    plt.xlabel('x')
-    plt.ylabel('mu')
-    plt.title('u(x,mu)')
-    plt.savefig( "net_sol.png", dpi=400)
+    plt.xlabel(r'$x$')
+    plt.ylabel(r'$\mu$')
+    plt.title(r'$u(x,\mu)$')
+    print(model.forward_coef(torch.tensor([0.5])))
+    # plt.savefig(images_path + "/net_sol.png", dpi=400)
     plt.show()
     plt.figure()
     plt.contourf(x.reshape(-1, ), mu.reshape(-1, ), exact.detach().numpy().T, cmap='jet')
     plt.axes().set_aspect('equal')
     plt.colorbar()
-    plt.xlabel('x')
-    plt.ylabel('mu')
-    plt.title('u(x,mu)')
-    # plt.savefig("exact.png", dpi=400)
+    plt.xlabel(r'$x$')
+    plt.ylabel(r'$\mu$')
+    plt.title(r'$u(x,\mu)$')
+    plt.savefig(images_path + "/exact.png", dpi=400)
 
     x = np.linspace(0, 0, 1)
     mu = np.linspace(-1, 1, n)
@@ -308,12 +316,12 @@ def plotting(model, images_path, extrema, solid):
 
     plt.figure()
     plt.grid(True, which="both", ls=":")
-    plt.plot(mu, sol, color="grey", lw=2, label='Learned Solution')
-    plt.scatter(mu_ex, sol_ex, label='Exact Solution')
-    plt.xlabel('mu')
-    plt.ylabel('u^-(x=0)')
+    plt.plot(mu, sol, color="grey", lw=2, label=r'Learned Solution')
+    plt.scatter(mu_ex, sol_ex, label=r'Exact Solution')
+    plt.xlabel(r'$\mu$')
+    plt.ylabel(r'$u^-(x=0)$')
     plt.legend()
-    # plt.savefig(images_path + "/u0.png", dpi=400)
+    plt.savefig(images_path + "/u0.png", dpi=400)
 
     x = np.linspace(1, 1, 1)
     mu = np.linspace(-1, 1, n)
@@ -330,10 +338,10 @@ def plotting(model, images_path, extrema, solid):
 
     plt.figure()
     plt.grid(True, which="both", ls=":")
-    plt.plot(mu, sol, color="grey", lw=2, label='Learned Solution')
-    plt.scatter(mu_ex, sol_ex, label='Exact Solution')
-    plt.xlabel('mu')
-    plt.ylabel('u(x=1)')
+    plt.plot(mu, sol, color="grey", lw=2, label=r'Learned Solution')
+    plt.scatter(mu_ex, sol_ex, label=r'Exact Solution')
+    plt.xlabel(r'$\mu$')
+    plt.ylabel(r'$u^+(x=1)$')
     plt.legend()
     plt.savefig(images_path + "/u1.png", dpi=400)
 

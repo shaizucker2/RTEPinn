@@ -17,7 +17,7 @@ def initialize_inputs(len_sys_argv):
         # Number of training+validation points
         n_coll_ = 8192
         n_u_ = 120
-        n_int_ = 4096 #was 4096
+        n_int_ = 10000 #was 4096
 
         # # Only for Navier Stokes
         n_object = 0
