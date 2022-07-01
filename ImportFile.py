@@ -68,22 +68,22 @@ class bcolors:
 
 # import EquationModels.RadiativeInverseBEST as Ec
 
-import ModelInverseSZ as Ec
-# import Forward as Ec
+# import ModelInverseSZ as Ec
+import Forward as Ec
 import ObjectClass
-# from ModelClassTorch2 import * # S.Z 0606
+# from ModelClassTorch2 import * # .Z 0606
 from ModelClassRTEPINN import *
-# from DataCreation import *
+from DataCreation import *
 from DataCreationAerosolInverse import *
-
-rc('font', **{'family': 'serif', 'serif': ['Computer Modern']})
-rc('text', usetex=True)
-# plt.rc('text.latex', preamble=r'\usepackage{euscript}')
-SMALL_SIZE = 8
-MEDIUM_SIZE = 14
-BIGGER_SIZE = 16
-
-plt.rc('axes', labelsize=MEDIUM_SIZE)  # fontsize of the x and y labels
-plt.rc('xtick', labelsize=MEDIUM_SIZE)  # fontsize of the tick labels
-plt.rc('ytick', labelsize=MEDIUM_SIZE)  # fontsize of the tick labels
-plt.rc('axes', titlesize=BIGGER_SIZE)  # fontsize of the tick labels
+#S>Z 2706 TODO uncomment all bellow
+# rc('font', **{'family': 'serif', 'serif': ['Computer Modern']})
+# rc('text', usetex=True)
+# # plt.rc('text.latex', preamble=r'\usepackage{euscript}')
+# SMALL_SIZE = 8
+# MEDIUM_SIZE = 14
+# BIGGER_SIZE = 16
+#
+# plt.rc('axes', labelsize=MEDIUM_SIZE)  # fontsize of the x and y labels
+# plt.rc('xtick', labelsize=MEDIUM_SIZE)  # fontsize of the tick labels
+# plt.rc('ytick', labelsize=MEDIUM_SIZE)  # fontsize of the tick labels
+# plt.rc('axes', titlesize=BIGGER_SIZE)  # fontsize of the tick labels

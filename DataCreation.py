@@ -1,6 +1,6 @@
 from ImportFile import *
 from datetime import datetime
-from InverseRTEPINN import *
+# from InverseRTEPINN import *
 
 parameters_values = torch.tensor([[0, 2 * pi],
                                   [0, pi],

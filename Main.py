@@ -1,3 +1,6 @@
+import numpy as np
+import torch
+
 from ImportFile import *
 from datetime import datetime
 pi = math.pi
@@ -31,7 +34,7 @@ def initialize_inputs(len_sys_argv):
             "kernel_regularizer": 2,
             "regularization_parameter": 0,
             "batch_size": (n_coll_ + n_u_ + n_int_),
-            "epochs": 1,
+            "epochs": 1000,
             "activation": "tanh"
         }
         retrain_ = 32
@@ -212,7 +215,9 @@ final_error_test = 0
 # os.mkdir(model_path)
 #
 # L2_test, rel_L2_test = Ec.compute_generalization_error(model, extrema, images_path)
-Ec.plotting(model, 'Temp', extrema, solid_object)
+# x_coef = np.arange(0, 1, 500)
+y = model.forward_coef(torch.Tensor([0.5]).to(dev))
+Ec.plotting(model, '..//results', extrema, solid_object)
 # Ec.plotting(model, images_path, extrema, solid_object)
 
 end_plotting = time.time() - end

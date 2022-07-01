@@ -219,14 +219,14 @@ def plotting(model, images_path, extrema, solid):
 
     exact = torch.sin(pi * mu_l) ** 2 * torch.cos(pi / 2 * x_l)
     exact = exact.reshape(x.shape[0], mu.shape[0])
-    x_meas = x_l
-    mu_meas = mu_l
-    u_meas = exact
-    torch.save(x_meas, 'meas.pt')
-    torch.save(mu_meas, 'meas.pt')
-    torch.save(u_meas, 'meas.pt')
+    x_meas = x
+    mu_meas = mu
+    u_meas = sol
+    torch.save(x_l, 'measx0107.pt')
+    torch.save(mu_l, 'measmu0107.pt')
+    torch.save(u_meas.reshape(-1), 'measu0107.pt')
     print(torch.mean(abs(sol - exact) / torch.mean(abs(exact))))
-
+    print('something good')
     levels = [0.00, 0.006, 0.013, 0.021, 0.029, 0.04, 0.047, 0.06, 0.071, 0.099, 0.143, 0.214, 0.286, 0.357, 0.429, 0.5, 0.571, 0.643, 0.714, 0.786, 0.857, 0.929, 1]
     norml = matplotlib.colors.BoundaryNorm(levels, 256)
     plt.figure()
@@ -245,7 +245,7 @@ def plotting(model, images_path, extrema, solid):
     plt.xlabel(r'$x$')
     plt.ylabel(r'$\mu$')
     plt.title(r'$u(x,\mu)$')
-    plt.savefig(images_path + "/exact.png", dpi=400)
+    # plt.savefig(images_path + "/exact.png", dpi=400)
 
     x = np.linspace(0, 0, 1)
     mu = np.linspace(-1, 1, n)
@@ -289,7 +289,7 @@ def plotting(model, images_path, extrema, solid):
     plt.xlabel(r'$\mu$')
     plt.ylabel(r'$u^+(x=1)$')
     plt.legend()
-    plt.savefig(images_path + "/u1.png", dpi=400)
+    # plt.savefig(images_path + "/u1.png", dpi=400)
 
     with open(images_path + '/errors.txt', 'w') as file:
         file.write("err_1,"
